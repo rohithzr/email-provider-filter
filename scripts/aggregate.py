@@ -133,28 +133,41 @@ def write_source_stats(source_domains: Dict[str, Set[str]],
         json.dump(source_stats, f, indent=2)
     print("  Source stats written to output/source_stats.json")
 
-def compute_deltas(new_domains: Dict[str, List[str]]) -> Dict:
-    """Compare new domains against existing output files and write delta.json."""
+def compute_deltas(new_domains: Dict[str, List[str]], max_samples: int = 20) -> Dict:
+    """Compare new domains against existing output files and write delta.json.
+
+    Must be called BEFORE output files are overwritten so that the old
+    files on disk still reflect the previous release.
+    """
     old_domains: Dict[str, Set[str]] = {}
     for category in ('disposable', 'free', 'paid_personal'):
         path = f'output/{category}.txt'
         old_domains[category] = load_domains_from_file(path)
 
+    all_added: List[str] = []
+    all_removed: List[str] = []
+
     delta: Dict = {'categories': {}, 'total_added': 0, 'total_removed': 0}
     for category in ('disposable', 'free', 'paid_personal'):
         new_set = set(new_domains[category])
         old_set = old_domains[category]
-        added = len(new_set - old_set)
-        removed = len(old_set - new_set)
+        added = sorted(new_set - old_set)
+        removed = sorted(old_set - new_set)
         delta['categories'][category] = {
-            'added': added,
-            'removed': removed,
+            'added': len(added),
+            'removed': len(removed),
             'total': len(new_set),
         }
-        delta['total_added'] += added
-        delta['total_removed'] += removed
+        delta['total_added'] += len(added)
+        delta['total_removed'] += len(removed)
+        all_added.extend(added)
+        all_removed.extend(removed)
 
     delta['total_domains'] = sum(d['total'] for d in delta['categories'].values())
+
+    # Include up to max_samples domain names for the release notes
+    delta['added_samples'] = sorted(all_added)[:max_samples]
+    delta['removed_samples'] = sorted(all_removed)[:max_samples]
 
     with open('output/delta.json', 'w') as f:
         json.dump(delta, f, indent=2)
@@ -174,23 +187,27 @@ def generate_outputs(disposable: Set[str], free: Set[str], paid_personal: Set[st
         'paid_personal': sorted(list(paid_personal))
     }
     
+    # Compute deltas BEFORE overwriting output files so we compare against
+    # the previous release's data still on disk.
+    delta = compute_deltas(new_domains)
+
     # Check if domain content has actually changed
     existing_timestamp = None
     content_changed = True  # Default to True if no existing file
-    
+
     if os.path.exists('output/email_domains.json'):
         try:
             with open('output/email_domains.json', 'r') as f:
                 existing_data = json.load(f)
                 existing_domains = existing_data.get('domains', {})
                 existing_timestamp = existing_data.get('metadata', {}).get('generated')
-                
+
                 # Compare domain content (ignore metadata)
                 content_changed = existing_domains != new_domains
         except (json.JSONDecodeError, KeyError):
             # If we can't parse existing file, assume content changed
             content_changed = True
-    
+
     # Use existing timestamp if content hasn't changed, otherwise use current time
     if content_changed or existing_timestamp is None:
         from datetime import datetime, timezone
@@ -252,9 +269,6 @@ def generate_outputs(disposable: Set[str], free: Set[str], paid_personal: Set[st
         print("  ✓ Domain content has changed - timestamp updated")
     else:
         print("  ✓ Domain content unchanged - timestamp preserved")
-
-    # Compute deltas against previous output
-    delta = compute_deltas(new_domains)
 
 def main():
     print("Starting email domain aggregation...")

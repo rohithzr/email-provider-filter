@@ -59,6 +59,19 @@ jobs:
             echo "paid_personal_added=$(jq -r '.categories.paid_personal.added' output/delta.json)" >> $GITHUB_OUTPUT
             echo "paid_personal_removed=$(jq -r '.categories.paid_personal.removed' output/delta.json)" >> $GITHUB_OUTPUT
             echo "paid_personal_total=$(jq -r '.categories.paid_personal.total' output/delta.json)" >> $GITHUB_OUTPUT
+
+            # Build sample lists for release notes (up to 20 each)
+            ADDED_LIST=$(jq -r '.added_samples[]' output/delta.json | sed 's/^/- `/' | sed 's/$/`/' | head -20)
+            REMOVED_LIST=$(jq -r '.removed_samples[]' output/delta.json | sed 's/^/- `/' | sed 's/$/`/' | head -20)
+
+            # Use multiline outputs via delimiter
+            echo "added_list<<ADDEDEOF" >> $GITHUB_OUTPUT
+            echo "$ADDED_LIST" >> $GITHUB_OUTPUT
+            echo "ADDEDEOF" >> $GITHUB_OUTPUT
+
+            echo "removed_list<<REMOVEDEOF" >> $GITHUB_OUTPUT
+            echo "$REMOVED_LIST" >> $GITHUB_OUTPUT
+            echo "REMOVEDEOF" >> $GITHUB_OUTPUT
           fi
         fi
         
@@ -86,6 +99,18 @@ jobs:
           | Free | +${{ steps.changes.outputs.free_added }} | -${{ steps.changes.outputs.free_removed }} | ${{ steps.changes.outputs.free_total }} |
           | Paid Personal | +${{ steps.changes.outputs.paid_personal_added }} | -${{ steps.changes.outputs.paid_personal_removed }} | ${{ steps.changes.outputs.paid_personal_total }} |
           | **Total** | **+${{ steps.changes.outputs.total_added }}** | **-${{ steps.changes.outputs.total_removed }}** | **${{ steps.changes.outputs.total_domains }}** |
+
+          <details><summary>Domains Added (up to 20)</summary>
+
+          ${{ steps.changes.outputs.added_list }}
+
+          </details>
+
+          <details><summary>Domains Removed (up to 20)</summary>
+
+          ${{ steps.changes.outputs.removed_list }}
+
+          </details>
 
           ## Generated Files
           - `email_domains.json` - Complete dataset in JSON format
